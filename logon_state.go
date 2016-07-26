@@ -20,6 +20,19 @@ func (s logonState) FixMsgIn(session *session, msg Message) (nextState sessionSt
 	return latentState{}
 }
 
+func (state logonState) SendQueued(session *session) (nextState sessionState) {
+	session.sendMutex.Lock()
+	defer session.sendMutex.Unlock()
+
+	for _, msg := range session.toSend {
+		session.sendBytes(msg)
+	}
+
+	session.toSend = session.toSend[:0]
+
+	return state
+}
+
 func (s logonState) Timeout(session *session, e event) (nextState sessionState) {
 	if e == logonTimeout {
 		session.log.OnEvent("Timed out waiting for logon response")

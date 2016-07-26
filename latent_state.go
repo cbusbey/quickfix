@@ -10,6 +10,10 @@ func (state latentState) FixMsgIn(session *session, msg Message) (nextState sess
 	return state
 }
 
+func (state latentState) SendQueued(session *session) (nextState sessionState) {
+	return state
+}
+
 func (state latentState) Timeout(*session, event) (nextState sessionState) {
 	return state
 }

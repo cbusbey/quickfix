@@ -9,6 +9,8 @@ type sessionState interface {
 	//following message processing
 	FixMsgIn(*session, Message) (nextState sessionState)
 
+	SendQueued(*session) (nextState sessionState)
+
 	//Timeout is called by the session on a timeout event.
 	Timeout(*session, event) (nextState sessionState)
 

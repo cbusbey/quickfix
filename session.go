@@ -20,7 +20,7 @@ type session struct {
 	messageOut chan []byte
 
 	//application messages are queued up to be sent during the run loop.
-	toSend []Message
+	toSend [][]byte
 	//mutex for access to toSend
 	sendMutex sync.Mutex
 
@@ -189,37 +189,12 @@ func (s *session) resend(msg Message) {
 	s.sendBytes(msg.rawMessage)
 }
 
-//queueForSend will queue up a message to be sent by the session during the next iteration of the run loop
-func (s *session) queueForSend(msg Message) {
-	s.sendMutex.Lock()
-	defer s.sendMutex.Unlock()
-	s.toSend = append(s.toSend, msg)
-	select {
-	case s.messageEvent <- true:
-	default:
-	}
-}
-
-//sends queued messages if session is logged on
-func (s *session) sendQueued() {
-	if !s.IsLoggedOn() {
-		return
-	}
-
-	s.sendMutex.Lock()
-	defer s.sendMutex.Unlock()
-
-	for _, msg := range s.toSend {
-		s.send(msg)
-	}
-
-	s.toSend = s.toSend[:0]
-}
-
-//send should NOT be called outside of the run loop
+//send will queue up a message to be sent by the session during the next iteration of the run loop
 func (s *session) send(msg Message) {
-	s.fillDefaultHeader(msg)
+	s.sendMutex.Lock()
+	defer s.sendMutex.Unlock()
 
+	s.fillDefaultHeader(msg)
 	seqNum := s.store.NextSenderMsgSeqNum()
 	msg.Header.SetField(tagMsgSeqNum, FIXInt(seqNum))
 
@@ -229,13 +204,35 @@ func (s *session) send(msg Message) {
 	} else {
 		s.application.ToApp(msg, s.sessionID)
 	}
-	if msgBytes, err := msg.Build(); err != nil {
+
+	msgBytes, err := msg.Build()
+	if err != nil {
 		panic(err)
-	} else {
-		s.store.SaveMessage(seqNum, msgBytes)
-		s.sendBytes(msgBytes)
-		s.store.IncrNextSenderMsgSeqNum()
 	}
+	s.store.SaveMessage(seqNum, msgBytes)
+	s.store.IncrNextSenderMsgSeqNum()
+
+	s.toSend = append(s.toSend, msgBytes)
+	select {
+	case s.messageEvent <- true:
+	default:
+	}
+}
+
+//sends queued messages if session is logged on
+func (s *session) sendQueued() {
+	s.sendMutex.Lock()
+	defer s.sendMutex.Unlock()
+
+	if !s.IsLoggedOn() {
+		return
+	}
+
+	for _, msg := range s.toSend {
+		s.sendBytes(msg)
+	}
+
+	s.toSend = s.toSend[:0]
 }
 
 func (s *session) sendBytes(msg []byte) {
@@ -543,13 +540,12 @@ func (s *session) run(msgIn chan fixIn, msgOut chan []byte, quit chan bool) {
 	}
 
 	for {
+		s.sessionState = s.SendQueued(s)
 
 		switch s.sessionState.(type) {
 		case latentState:
 			return
 		}
-
-		s.sendQueued()
 
 		select {
 		case fixIn, ok := <-msgIn:

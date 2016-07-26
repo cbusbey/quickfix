@@ -328,54 +328,56 @@ func TestSession_CheckToAppCalled(t *testing.T) {
 }
 
 func TestSession_sendQueued(t *testing.T) {
-	app := new(TestClient)
-	otherEnd := make(chan []byte)
-	go func() {
-		for {
-			_, ok := <-otherEnd
-			if !ok {
-				return
-			}
-		}
-	}()
-	session := session{
-		store:       new(memoryStore),
-		application: app,
-		messageOut:  otherEnd,
-		log:         nullLog{}}
-	session.queueForSend(buildMessage())
-	session.queueForSend(buildMessage())
-	session.queueForSend(buildMessage())
-
-	if len(session.toSend) != 3 {
-		t.Errorf("Expected %v queued messages, got %v", 3, len(session.toSend))
-	}
-
 	var tests = []struct {
 		sessionState
+		expectedSent int
 	}{
-		{logonState{}},
-		{logoutState{}},
+		{logonState{}, 0},
+		{logoutState{}, 0},
+		{inSession{}, 3},
 	}
 
 	for _, test := range tests {
+		app := new(TestClient)
+		var sentMessages [][]byte
+		otherEnd := make(chan []byte)
+		go func() {
+			for {
+				m, ok := <-otherEnd
+				if !ok {
+					return
+				}
+
+				sentMessages = append(sentMessages, m)
+			}
+		}()
+
+		session := session{
+			store:       new(memoryStore),
+			application: app,
+			messageOut:  otherEnd,
+			log:         nullLog{}}
+
+		session.send(buildMessage())
+		session.send(buildMessage())
+		session.send(buildMessage())
+
 		session.sessionState = test.sessionState
+
+		if len(session.toSend) != 3 {
+			t.Errorf("Expected %v queued messages, got %v", 3, len(session.toSend))
+		}
+
+		if app.appCalled != 3 {
+			t.Errorf("Expected %v toApp, got %v", 3, len(session.toSend))
+		}
+
 		session.sendQueued()
 
-		if app.appCalled != 0 {
-			t.Fatalf("session state %v should not allow send but sent %v times", session.sessionState, app.appCalled)
+		numMessagesSent := len(sentMessages)
+
+		if numMessagesSent != test.expectedSent {
+			t.Fatalf("session state %v expected %v sends but sent %v times", session.sessionState, test.expectedSent, numMessagesSent)
 		}
-	}
-
-	session.sessionState = inSession{}
-
-	session.sendQueued()
-
-	if app.appCalled != 3 {
-		t.Errorf("Toapp should have been called %v times, instead was called %v times", 3, app.appCalled)
-	}
-
-	if len(session.toSend) != 0 {
-		t.Errorf("Expected no queued messages, got %v", len(session.toSend))
 	}
 }

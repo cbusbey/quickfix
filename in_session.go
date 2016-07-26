@@ -43,6 +43,19 @@ func (state inSession) FixMsgIn(session *session, msg Message) (nextState sessio
 	return state
 }
 
+func (state inSession) SendQueued(session *session) (nextState sessionState) {
+	session.sendMutex.Lock()
+	defer session.sendMutex.Unlock()
+
+	for _, msg := range session.toSend {
+		session.sendBytes(msg)
+	}
+
+	session.toSend = session.toSend[:0]
+
+	return state
+}
+
 func (state inSession) Timeout(session *session, event event) (nextState sessionState) {
 	switch event {
 	case needHeartbeat:
@@ -73,7 +86,7 @@ func (state inSession) handleLogout(session *session, msg Message) (nextState se
 	session.log.OnEvent("Sending logout response")
 
 	state.generateLogout(session)
-	return latentState{}
+	return logoutState{}
 }
 
 func (state inSession) handleSequenceReset(session *session, msg Message) (nextState sessionState) {
