@@ -159,6 +159,34 @@ func TestSession_CheckTargetTooLow(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+type NewSessionTestSuite struct {
+	suite.Suite
+
+	SessionID
+	MessageStoreFactory
+	*SessionSettings
+	LogFactory
+	*mockApp
+}
+
+func TestNewSessionTestSuite(t *testing.T) {
+	suite.Run(t, new(NewSessionTestSuite))
+}
+
+func (s *NewSessionTestSuite) SetupTest() {
+	s.SessionID = SessionID{BeginString: "FIX.4.2", TargetCompID: "TW", SenderCompID: "ISLD"}
+	s.MessageStoreFactory = NewMemoryStoreFactory()
+	s.SessionSettings = NewSessionSettings()
+	s.LogFactory = nullLogFactory{}
+	s.mockApp = new(mockApp)
+}
+
+func (s *NewSessionTestSuite) Test() {
+	session, err := newSession(s.SessionID, s.MessageStoreFactory, s.SessionSettings, s.LogFactory, s.mockApp)
+	s.Nil(err)
+	s.NotNil(session)
+}
+
 type SessionSendTestSuite struct {
 	suite.Suite
 
